@@ -1,253 +1,5 @@
 # 🎮 Cyberpunk 2077 Purchase Intent Simulation (Multi-Agent RAG)
 
-이 프로젝트는 '사이버펑크 2077'의 출시 전후 여론 변화를 시뮬레이션하기 위해, **3가지 다른 방법론(Team 1, 2, 3)** 을 비교 분석합니다.
-모든 팀은 공통된 평가 스크립트와 **공통 페르소나 모듈**을 사용하여 실험의 일관성을 유지합니다.
-
-## 🚀 빠른 시작 (Quick Start)
-
-```bash
-# 1. 환경 설정
-cp env_template.txt .env
-# .env 파일을 열어서 OPENAI_API_KEY 입력
-
-# 2. 전체 실험 실행 (가상환경 자동 생성 및 패키지 설치 포함)
-chmod +x run_experiment.sh
-./run_experiment.sh
-```
-
-**실험 소요 시간:** 약 1-2시간 (API rate limit에 따라 달라질 수 있음)
-
-> **참고:** `run_experiment.sh`는 자동으로 가상환경(`.venv`)을 생성하고 필요한 패키지를 설치합니다.
-
----
-
-## 🔬 실험 개요 (Experiment Overview)
-
-> **💡 일반 데이터 분석과의 차별점:** 이 실험은 단순 통계 분석이 아닌, **에이전트 기반 시뮬레이션**을 통해 시간에 따른 동적 변화를 모델링합니다. 증빙 자료는 `experiment_validation/` 폴더를 참고하세요.
-
-### Team 1: Static Zero-Shot
-- **방법:** 페르소나만으로 예측 (RAG 없음)
-- **특징:** 시간/리뷰 정보 없이 고정된 구매율
-- **목적:** "아무것도 안 넣으면 이 정도"의 기준선
-
-### Team 2: Static RAG
-- **방법:** Cosine similarity 기반 RAG 검색
-- **특징:** 시간 개념 없이 유사도만으로 리뷰 선택
-- **목적:** Team 3와 비교의 기준선
-
-### Team 3: Time-Aware RAG
-- **방법:** Cosine similarity × Time decay 가중치
-- **특징:** 최근 리뷰에 높은 가중치 부여
-- **목적:** 시간 정보를 활용한 구매 의도 예측 개선
-
----
-
-## 📊 실험 구성 요소 (Experimental Components)
-
-### 실험 구성 요소 표
-
-| 구성 요소 | Team 1 | Team 2 | Team 3 | 설명 |
-|:---|:---|:---|:---|:---|
-| **페르소나 생성** | ✅ | ✅ | ✅ | `utils/persona_generator.py` (104명, 동일) |
-| **쿼리 생성** | ❌ | ✅ | ✅ | `utils/search_queries.py` (관심사 기반) |
-| **RAG 검색** | ❌ | ✅ | ✅ | ChromaDB 벡터 검색 |
-| **Time Decay** | ❌ | ❌ | ✅ | `exp(-decay_rate × days_diff)` |
-| **LLM 모델** | ✅ | ✅ | ✅ | `gpt-4o-mini` (통일) |
-| **Temperature** | ✅ | ✅ | ✅ | `0.5` (통일) |
-| **외부 정보** | ❌ | ✅ | ✅ | Steam 리뷰 데이터 |
-| **시간 변수** | ❌ | ✅ | ✅ | 시뮬레이션 날짜별 실행 |
-| **예상 상관계수** | `NaN` | 낮음 | 높음 | Ground Truth와의 상관관계 |
-
-### 실험 파이프라인 시퀀스 다이어그램
-
-```mermaid
-sequenceDiagram
-    participant User
-    participant Script as run_experiment.sh
-    participant GT as Ground Truth Generator
-    participant DB as ChromaDB Builder
-    participant T1 as Team 1 (Zero-Shot)
-    participant T2 as Team 2 (Static RAG)
-    participant T3 as Team 3 (Time-Aware)
-    participant Eval as Evaluator
-
-    User->>Script: 실행 시작
-    Script->>GT: Ground Truth 생성
-    GT-->>Script: ground_truth_*.csv
-    
-    Script->>DB: ChromaDB 구축
-    DB->>DB: 리뷰 임베딩
-    DB-->>Script: chroma_db/ 완료
-    
-    par Team 1 실행
-        Script->>T1: 페르소나 생성
-        T1->>T1: LLM 호출 (외부 정보 없음)
-        T1-->>Script: Team1_Results.csv
-    and Team 2 실행
-        Script->>T2: 페르소나 생성
-        T2->>T2: RAG 검색 (similarity만)
-        T2->>T2: LLM 호출
-        T2-->>Script: Team2_Results.csv
-    and Team 3 실행
-        Script->>T3: 페르소나 생성
-        T3->>T3: RAG 검색 (similarity × time)
-        T3->>T3: LLM 호출
-        T3-->>Script: Team3_Results.csv
-    end
-    
-    Script->>Eval: Team 1 평가
-    Eval-->>Script: eval_Team1_graph.png
-    
-    Script->>Eval: Team 2 평가
-    Eval-->>Script: eval_Team2_graph.png
-    
-    Script->>Eval: Team 3 평가
-    Eval-->>Script: eval_Team3_graph.png
-    
-    Script-->>User: 실험 완료
-```
-
-### Team 2 vs Team 3 RAG 프로세스 비교
-
-```mermaid
-sequenceDiagram
-    participant Agent as 페르소나
-    participant Query as 쿼리 생성기
-    participant VDB as Vector DB
-    participant Rank as 랭킹 모듈
-    participant LLM as LLM
-
-    Note over Agent,LLM: Team 2 (Static RAG)
-    Agent->>Query: 게이머 유형 전달
-    Query->>Query: 관심사 기반 쿼리 생성
-    Query->>VDB: 쿼리 전송
-    VDB->>VDB: Cosine similarity 계산
-    VDB->>Rank: Top-K 리뷰 (similarity만)
-    Rank->>LLM: 상위 5개 리뷰 전달
-    LLM->>Agent: 구매 의사 결정
-    
-    Note over Agent,LLM: Team 3 (Time-Aware RAG)
-    Agent->>Query: 게이머 유형 전달
-    Query->>Query: 관심사 기반 쿼리 생성
-    Query->>VDB: 쿼리 전송
-    VDB->>VDB: Cosine similarity 계산
-    VDB->>Rank: 100개 후보 리뷰
-    Rank->>Rank: similarity × time_factor 계산
-    Rank->>Rank: 재랭킹 (최신 리뷰 우선)
-    Rank->>LLM: 상위 5개 리뷰 전달
-    LLM->>Agent: 구매 의사 결정
-```
-
----
-
-## 🔑 Team 2와 Team 3의 핵심 차이점
-
-### 동일한 부분 (공정성 보장)
-- ✅ **페르소나 생성:** `utils/persona_generator.py` 공통 사용
-- ✅ **쿼리 생성:** `utils/search_queries.py` 공통 사용 (관심사 기반 쿼리)
-- ✅ **리뷰 임베딩:** 동일한 모델 (`all-MiniLM-L6-v2`)
-- ✅ **ChromaDB 컬렉션:** 동일한 데이터베이스 사용
-- ✅ **평가 기준:** 동일한 `evaluate_correlation.py` 사용
-
-### 💡 관심사 기반 쿼리 생성 (Interest-Based Query)
-
-**핵심 아이디어:** 페르소나별로 **"이 사람이 구글이나 유튜브에 뭐라고 검색할까?"**를 상상해서 쿼리를 만듭니다. 사용자가 실제로 궁금해할 만한 정보를 검색하는 것에서 실제 사람과의 유사성이 높아집니다!
-
-**예시:**
-- **Cloud Gamer**: `"Cyberpunk 2077 optimization bugs performance low fps"` (최적화/버그 검색)
-- **Hardware Enthusiast**: `"Cyberpunk 2077 graphics ray tracing benchmark visuals"` (그래픽 검색)
-- **All-Round Enthusiast**: `"Cyberpunk 2077 overall review pros and cons story gameplay"` (종합 리뷰 검색)
-
-**작동 원리:**
-1. **Agent:** "나는 `Cloud Gamer`야."
-2. **Query Generator:** "그럼 너는 최적화가 중요하겠네? 쿼리는 `Cyberpunk 2077 optimization bugs`로 정할게."
-3. **Vector DB:** 해당 쿼리와 유사한 리뷰들(예: *"최적화 개망함", "버그 때문에 튕김"*)을 찾아서 가져옴.
-4. **LLM (Decision):** "나는 `Cloud Gamer`인데, 검색된 리뷰들이 다 최적화가 나쁘다고 하네? -> **구매 안 함(NO)**"
-
-### 차이점 (오직 시간 가중치)
-- **Team 2:**
-  ```python
-  # static_rag/rag_modules.py
-  results = collection.query(
-      query_texts=[query],
-      n_results=top_k,  # 작은 풀에서 직접 선택
-      where={"date": {"$lte": date_int}}
-  )
-  # similarity만 사용 (time weight 없음)
-  ```
-
-- **Team 3:**
-  ```python
-  # time_aware_rag/rag_modules.py
-  results = collection.query(
-      query_texts=[query],
-      n_results=100,  # 넓은 풀 검색
-      where={"timestamp": {"$lte": current_ts}}
-  )
-  # similarity × time_factor 계산
-  similarity = max(0, 1 - dist)
-  time_factor = np.exp(-decay_rate * days_diff)
-  final_score = similarity * time_factor  # ← 핵심 차이
-  ```
-
-**결론:** Team 2와 Team 3의 차이는 **오직 시간 가중치(time decay) 적용 여부**입니다.
-
----
-
-## ⏰ Time-Aware 가중치 구현
-
-### 동기 (Motivation)
-- **지연된 여론 반영:** 출시 초기 리뷰와 후기 리뷰의 신뢰도 차이
-- **최신 정보 우선:** 최근 리뷰가 현재 게임 상태를 더 잘 반영
-
-### 구현 (Implementation)
-- **함수:** Exponential decay
-  ```python
-  time_factor = exp(-decay_rate * days_diff)
-  final_score = similarity * time_factor
-  ```
-- **파라미터:** `decay_rate = 0.01` (기본값)
-- **Half-life:** 약 70일 (70일 후 가중치가 절반으로 감소)
-
-### 예시
-- 0일 전 리뷰: `time_factor = 1.00` (100%)
-- 70일 전 리뷰: `time_factor ≈ 0.50` (50%)
-- 100일 전 리뷰: `time_factor ≈ 0.37` (37%)
-- 200일 전 리뷰: `time_factor ≈ 0.14` (14%)
-
----
-
-## 📝 최근 변경 사항 (2025-01-04)
-
-### 실험 공정성 보장을 위한 통일 작업
-
-**변경 이유:** 대조군(control group) 생성을 위해 모든 팀이 동일한 조건에서 실험하도록 통일
-
-**주요 변경:**
-1. **LLM 모델 통일**
-   - 문제: Team 2는 `qwen3:4b`, Team 3는 `gpt-4o-mini` 사용 → 모델 차이로 인한 편향 가능
-   - 해결: `utils/llm_config.py` 공통 모듈 생성, 모든 팀이 `gpt-4o-mini` 사용
-   - 결과: 성능 차이는 오직 RAG 방식 차이만 반영
-
-2. **Temperature 통일**
-   - 문제: Team 1(0.7), Team 2/3(0.5) 서로 다른 값 사용
-   - 해결: 모든 팀이 `0.5`로 통일
-
-3. **API 키 처리 통일**
-   - 문제: Team 2는 `.env`, Team 3는 `input()` 사용
-   - 해결: 모든 팀이 `.env` 파일에서 로드하도록 통일
-
-4. **폴더 구조 정리**
-   - 결과 파일과 노트북을 해당 팀 폴더로 이동
-
-**검증 결과:**
-- ✅ 모든 팀이 동일한 LLM 모델 사용
-- ✅ 모든 팀이 동일한 Temperature 사용
-- ✅ 공통 모듈 사용으로 실험 일관성 확보
-- ✅ Team 2와 Team 3의 차이는 오직 Time decay 가중치 적용 여부만 반영
-
----
-
 ## 📂 프로젝트 구조 (Directory Structure)
 
 ```bash
@@ -306,354 +58,337 @@ sequenceDiagram
 
 ---
 
-## ⚡ 공통 작업 규칙 (Convention)
+# Cyberpunk 2077 구매 의사 시뮬레이션 (Multi-Agent RAG)
 
-### 1. 페르소나 모듈 사용 가이드 (For All Teams)
+> Multi-Agent RAG 연구 · 팀 프로젝트 · 2025  
+> GitHub: [RYUSEOKHO1050/NLP-Persona](https://github.com/RYUSEOKHO1050/NLP-Persona)
 
-모든 팀은 `utils` 폴더의 생성기를 사용하여 **동일한 에이전트 집단(104명)** 을 생성합니다.
+---
 
-**페르소나 통계 기반 (ESA 2024, Statista, Newzoo):**
-- **성별 분포:** 남성 54%, 여성 46%
-- **연령 분포:** ESA 2024, Statista 데이터 기반
-- **게이머 유형:** Newzoo 8가지 페르소나 분포 반영
-  - The Ultimate Gamer (13%), The All-Round Enthusiast (9%), The Cloud Gamer (19%)
-  - The Conventional Player (4%), The Hardware Enthusiast (9%), The Popcorn Gamer (13%)
-  - The Backseat Gamer (6%), The Time Filler (27%)
+## 1. 문제 정의
 
-**💻 Python 코드 작성 예시:**
+### 연구 목적
 
-```python
-import sys
-import os
+RAG(Retrieval-Augmented Generation) 환경에서 LLM 기반 페르소나 에이전트들이
+**시계열 데이터(뉴스, 리뷰)**에 노출되었을 때 대중의 여론 변화(구매 의사)를
+얼마나 정확하게 시뮬레이션할 수 있는지 검증.
 
-# 1. 상위 폴더(Project Root)를 경로에 추가 (utils를 불러오기 위함)
-sys.path.append(os.path.dirname(os.path.abspath(os.path.dirname(__file__))))
+| 항목 | 내용 |
+|------|------|
+| 대상 게임 | *Cyberpunk 2077* |
+| 시뮬레이션 기간 | 2020년 12월 ~ 2023년 12월 (총 53개 시점) |
+| 에이전트 수 | 104명 (8 게이머 유형 × 13명) |
+| 평가 지표 | Pearson / Spearman 상관계수 vs 실제 Steam 긍정 평가 비율 |
 
-from utils.persona_generator import generate_balanced_personas
+### 왜 Cyberpunk 2077인가?
 
-# 2. 페르소나 생성 (13명씩 8개 유형 = 총 104명)
-personas = generate_balanced_personas(n_per_type=13)
+극단적인 여론 변동성을 보인 도메인이기 때문입니다.
 
-# 3. 시뮬레이션 루프 예시 (Team 2/3용)
-results = []
-current_date = "2020-12-10"  # 시뮬레이션 시점
+- **출시 (2020.12):** 수년 간의 기대감 속 출시
+- **급락 (2021년 초):** 기술적 결함 폭발 → 구세대 콘솔 환불 사태, 스팀 평가 급락
+- **회복 (2021~2022):** 연속 패치 배포
+- **반전 (2022.09):** Edgerunners 애니메이션 공개 후 Steam 평가 역대 최고치 갱신
 
-for persona in personas:
-    # ... (RAG 검색 및 LLM 호출 로직) ...
-    
-    # 4. 결과 저장 (Dictionary 구성)
-    results.append({
-        "Agent_ID": persona.id,
-        "Name": persona.name,
-        "Persona_Type": persona.gamer_type_name_display, # (필수) 영어 유형 이름
-        "Decision": "YES",           # (필수) YES or NO
-        "Simulation_Date": current_date, # (필수) Team 2, 3는 날짜 꼭 넣어야 함!
-        "Reasoning": "Bugs are terrible..."
-    })
+이처럼 **시점마다 다른 정보**가 의사결정에 영향을 주는 환경은
+시간 인식(Time-Awareness) 모델을 테스트하기에 이상적입니다.
+
+### 왜 어려운 문제인가?
+
+1. **시간 인식 문제** — 기존 RAG는 유사도만으로 검색하기 때문에 2년 전 극찬 리뷰와 최근 환불 사태 리뷰를 동등하게 가져올 수 있음
+2. **페르소나 진정성 검증** — LLM이 페르소나 특성을 실제로 반영하는지, 아니면 학습 데이터의 일반적 경향에 끌려가는지 구분이 어려움
+3. **인간 여론의 정량화** — "구매 결정"을 숫자로 만들고 실제 여론 지표와 비교하려면 적절한 Ground Truth 설계가 필요
+4. **에이전트 수와 통계적 신뢰성** — 실제 게이머 분포를 반영하면서도 실험적으로 다룰 수 있는 규모를 찾아야 함
+
+---
+
+## 2. 담당 역할 (My Role)
+
+팀 프로젝트에서 저는 **RAG 관련 설계 및 구현 전체**를 담당했습니다.
+
+| 담당 | 내용 |
+|------|------|
+| **나 (석호)** | Static RAG 설계·구현(`static_rag/`), Time-Aware RAG 설계·구현(`time_aware_rag/`), 공통 유틸리티 구현(`utils/`) |
+| 팀원 | Zero-Shot Baseline 구현(`static_zero_shot/`) |
+
+**Tech Stack**
+
+| 분류 | 기술 |
+|------|------|
+| LLM 엔진 | gpt-4o-mini (Temperature 0.5) |
+| Vector DB | ChromaDB |
+| 임베딩 (비교) | all-MiniLM-L6-v2 vs text-embedding-3-small |
+| 프레임워크 | Python, OpenAI API |
+| 평가 지표 | Pearson 상관계수 (선형 정밀도), Spearman 상관계수 (순위 경향성) |
+
+---
+
+## 3. 데이터 분석 (Ground Truth EDA)
+
+> EDA에서 발견한 것들이 이후 설계 결정의 근거가 됐습니다.
+
+### 발견 1. Steam 여론은 세 단계로 나뉜다
+
+| 기간 | Steam 긍정 비율 | 특징 |
+|------|:--------------:|------|
+| 2020.12 ~ 2021.02 | 급락 | 출시 직후 버그 사태, 주간 단위 급변 |
+| 2021.03 ~ 2022.08 | 서서히 회복 | 패치 누적, 월간 단위 완만한 상승 |
+| 2022.09 ~ 2023.12 | 급반등 | Edgerunners 공개 후 역대 최고치 |
+
+이 세 단계는 각각 **다른 성격의 리뷰**가 여론을 지배합니다.
+Static RAG는 2021년 리뷰와 2023년 리뷰를 동등하게 취급하기 때문에,
+시뮬레이션 날짜와 무관하게 평균화된 여론으로 답하게 됩니다.
+
+### 발견 2. 주가와 게이머 여론은 반대로 움직인다
+
+- **주가**: 출시 직후 급락 → 이후 완만한 회복
+- **Steam 긍정 비율**: 급락 이후 서서히 회복, 2022년 급반등
+
+주가 급락은 투자자 공포가 반영됩니다.
+게이머 여론 회복은 실제 게임 경험의 개선에 따라 움직입니다.
+두 지표가 반대로 움직이는 이 패턴은 나중에 **페르소나 무결성 검증**에 활용됩니다.
+
+### 발견 3. 시뮬레이션 시점 밀도를 다르게 설계해야 한다
+
+출시 직후 급변기(2020.12 ~ 2021.02)는 **주간(Weekly)** 모니터링이 필요하고,
+안정기(2021.03 ~)는 **월간(Monthly)** 모니터링으로 충분합니다.
+동일한 간격으로 53개 시점을 구성했다면 급변기를 놓쳤을 것입니다.
+
+---
+
+## 4. 핵심 설계 결정
+
+> 각 결정은 위 데이터 분석 발견으로부터 도출했습니다.
+
+### ① Time-Decay 가중 검색 (발견 1 기반)
+
+Static RAG는 유사도 상위 k개를 그대로 반환합니다.
+문제는 "Cyberpunk 2077은 살 만한가?"라는 쿼리에 대해,
+2021년의 환불 사태 리뷰와 2023년의 Edgerunners 찬사 리뷰가 동등하게 검색된다는 것입니다.
+
+시뮬레이션 날짜 기준으로 **최근 리뷰에 더 높은 가중치**를 부여하는 시간 감쇠 함수를 도입했습니다.
 
 ```
+final_score = similarity × exp(−0.01 × days_diff)
 
-### 2. CSV 결과 파일 양식 (매우 중요 ⭐)
-
-평가 스크립트가 인식할 수 있도록 반드시 아래 컬럼명을 포함해야 합니다.
-
-| 컬럼명 | 필수 여부 | 설명 | 예시 값 |
-| --- | --- | --- | --- |
-| **`Agent_ID`** | 필수 | 에이전트 고유 ID | `ultimate_gamer_1` |
-| **`Persona_Type`** | 필수 | 게이머 유형 | `The Ultimate Gamer` |
-| **`Decision`** | **필수** | 구매 의사 (YES/NO 파싱용) | `YES`, `NO` |
-| **`Simulation_Date`** | **Team 2, 3 필수** | 시뮬레이션 시점 (YYYY-MM-DD) | `2020-12-10` |
-| `Reasoning` | 선택 | 판단 이유 | `Because of bugs...` |
-
-> **주의:** Team 1(Static)은 시간 변화가 없으므로 `Simulation_Date` 컬럼이 없어도 됩니다. (평가 시 `--type static` 옵션 사용)
-
-### 3. 의존성 설치 (Dependencies)
-
-#### 가상환경 생성 및 활성화 (권장)
-
-```bash
-# 가상환경 생성
-python3 -m venv .venv
-
-# 가상환경 활성화
-source .venv/bin/activate  # macOS/Linux
-# 또는
-.venv\Scripts\activate  # Windows
+λ = 0.01  (반감기 ~70일)
+70일 후: 가중치 50% → 100일 후: 37% → 365일 후: 2.5%
 ```
 
-#### 패키지 설치
+날짜 필터(`date ≤ 시뮬레이션 날짜`)로 아직 일어나지 않은 미래 리뷰의 유입도 원천 차단합니다.
 
-```bash
-# pip 업그레이드
-pip install --upgrade pip
+### ② 후보 확장 후 재순위 (Candidate Expansion + Reranking)
 
-# 필수 패키지 설치
-pip install -r requirements.txt
+유사도 Top-5를 바로 반환하면 가중치 계산 전 단계에서 이미 최신 리뷰가 걸러질 수 있습니다.  
+300개 후보를 먼저 검색한 뒤 시간 감쇠 점수로 재정렬하고 상위 5개를 반환했습니다.
+
+```
+Static RAG:
+  유사도 계산 → Top-5 바로 반환
+
+Time-Aware RAG:
+  유사도 계산 → 300개 후보 → 시간 감쇠 점수 재정렬 → Top-5 반환
 ```
 
-**필수 패키지:**
-- `pandas>=2.0.0`: 데이터 처리
-- `openai>=1.0.0`: OpenAI API 클라이언트
-- `chromadb>=0.4.0`: 벡터 데이터베이스
-- `sentence-transformers>=2.2.0`: 임베딩 모델
-- `python-dotenv>=1.0.0`: 환경 변수 관리
-- `matplotlib>=3.7.0`, `seaborn>=0.12.0`: 시각화
-- `scipy>=1.10.0`: 통계 분석
+의미적으로 유사하지만 시뮬레이션 시점과 맞지 않는 리뷰를 걸러내는 Reranking 효과입니다.
 
-> **참고:** `run_experiment.sh`를 실행하면 자동으로 가상환경을 생성하고 패키지를 설치합니다.
+### ③ 계층화된 페르소나 설계 (발견 3의 에이전트 규모 문제 기반)
 
-### 4. 환경 설정 (Environment)
+실제 게이머 인구 통계를 기반으로 8가지 유형을 정의하고, 각 유형에서 **동일하게 13명**씩 추출했습니다.
+유형별 균등 비율(Stratified Sampling)은 특정 유형이 전체 결과를 지배하는 편향을 막고,
+세그먼트별 행동 차이를 통계적으로 검증할 수 있게 합니다.
 
-**중요:** 모든 팀이 동일한 LLM 모델을 사용하도록 `utils/llm_config.py`에서 통일되어 있습니다. (2025-01-04 변경: 대조군 생성을 위해 통일)
+| 유형 | 특성 |
+|------|------|
+| Ultimate Gamer | 고지출, Day-1 구매 성향 |
+| All-Round Enthusiast | 리뷰 중시, 다양한 장르 |
+| Cloud Gamer | 스트리밍·최적화 중시, 저사양 |
+| Hardware Enthusiast | 그래픽·벤치마킹 중시 |
+| Conventional Player | 보수적, 검증된 게임만 구매 |
+| Popcorn Gamer | 플레이보다 시청 선호 |
+| Backseat Gamer | 은퇴한 게이머, 과거 향수 중시 |
+| Time Filler | 자투리 시간 모바일 게이머 |
 
-#### API 키 설정
+### ④ 이중 Ground Truth 설계 (발견 2 기반)
 
-1. `env_template.txt` 파일을 `.env`로 복사:
-```bash
-cp env_template.txt .env
+Steam 긍정 비율(실제 사용자 경험)과 주가(투기 심리) 두 축으로 동시 평가합니다.  
+모델이 실제 게이머 여론을 추종하면 Steam과 양의 상관, 주가와는 음의 상관이 나와야 합니다.  
+만약 주가와 양의 상관이 나온다면, 에이전트가 게임의 본질적 가치가 아닌 외부 소음에 반응하는 것입니다.
+
+### ⑤ LLM 설정 통일 (공정한 비교를 위해)
+
+모든 실험군(Exp 1, 2, 3)이 동일한 LLM(gpt-4o-mini, Temperature 0.5)을 사용합니다.  
+`llm_config.py`로 단일 설정을 관리해 LLM 차이가 실험 결과에 개입하는 것을 차단했습니다.
+
+---
+
+## 5. 시스템 구조도 (Architecture Diagram)
+
 ```
-
-2. `.env` 파일을 열어서 API 키 입력:
-```bash
-OPENAI_API_KEY=sk-proj-your-api-key-here
-```
-
-> **참고:** `.env` 파일은 Git에 커밋되지 않습니다 (`.gitignore`에 포함).
-
-**기본 설정 (모든 팀 공통):**
-- LLM 모델: `gpt-4o-mini` (대조군 생성을 위해 통일)
-- Temperature: `0.5` (대조군 생성을 위해 통일)
-- API: OpenAI API 사용
-
-**로컬 LLM 사용 (Ollama):**
-`utils/llm_config.py`에서 `USE_OLLAMA = True`로 변경하면 로컬 Ollama를 사용합니다.
-
-> **실험 공정성:** 모든 팀이 동일한 LLM 설정을 사용하므로, 성능 차이는 오직 방법론 차이(RAG 방식)만 반영합니다.
-
-### 5. 데이터 준비 (Data Setup)
-
-#### 원본 리뷰 데이터 다운로드
-
-대용량 리뷰 데이터는 Git에 없으므로 아래 방법으로 다운로드하여 **`datasets` 폴더**에 위치시킵니다.
-
-**방법 1: Kaggle에서 다운로드**
-```bash
-# Kaggle CLI 사용 (권장)
-kaggle datasets download -d filas1212/cyberpunk-2077-steam-reviews-as-of-aug-8-2024 -p datasets/
-unzip datasets/cyberpunk-2077-steam-reviews-as-of-aug-8-2024.zip -d datasets/
-mv datasets/*.csv datasets/Cyberpunk_2077_Steam_Reviews.csv
-```
-
-**방법 2: 수동 다운로드**
-- [Kaggle 데이터셋](https://www.kaggle.com/datasets/filas1212/cyberpunk-2077-steam-reviews-as-of-aug-8-2024)에서 다운로드
-- `datasets/Cyberpunk_2077_Steam_Reviews.csv`로 저장
-
-#### Ground Truth 생성
-
-Ground Truth는 자동으로 생성됩니다 (`run_experiment.sh` 실행 시).
-
-수동 생성:
-```bash
-python analyze_ground_truth_steam.py
-python analyze_ground_truth_stock.py
-mv ground_truth_*.csv datasets/ 2>/dev/null || true
+┌─────────────────────────────────────────────────────────────────┐
+│                     시뮬레이션 날짜 (53개 시점)                    │
+│        주간: 2020.12 ~ 2021.02  /  월간: 2021.03 ~ 2023.12       │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+                                ▼
+┌─────────────────────────────────────────────────────────────────┐
+│               페르소나 생성 (persona_generator.py)                │
+│         8 유형 × 13명 = 104 에이전트                              │
+│         성별/연령: 실제 게이머 인구 통계 기반 가중 샘플링             │
+└───────────────────────────────┬─────────────────────────────────┘
+                                │
+        ┌───────────────────────┼──────────────────────┐
+        │                       │                      │
+        ▼                       ▼                      ▼
+┌──────────────┐    ┌──────────────────────┐  ┌─────────────────────────┐
+│   Exp 1      │    │       Exp 2          │  │         Exp 3           │
+│  Zero-Shot   │    │     Static RAG       │  │    Time-Aware RAG       │
+│              │    │                      │  │                         │
+│ 외부 정보 없음 │    │ 유사도 Top-5 직접 반환 │  │ 300개 후보 검색         │
+│ 페르소나 특성 │    │ (날짜 가중치 없음)     │  │ → exp(−λ×days) 재점수   │
+│ 만으로 판단  │    │                      │  │ → 중복 제거 → Top-5     │
+└──────┬───────┘    └──────────┬───────────┘  └──────────┬────────────┘
+       │                       │                         │
+       └───────────────────────┴─────────────────────────┘
+                                │
+                                ▼
+              ┌─────────────────────────────────┐
+              │            gpt-4o-mini           │
+              │    페르소나 + 검색된 리뷰 → 판단   │
+              │   YES/NO + Reasoning (JSON)      │
+              └──────────────────┬──────────────┘
+                                 │
+                                 ▼
+                      날짜별 구매율 집계 (YES 비율)
+                                 │
+                                 ▼
+             ┌──────────────────────────────────────┐
+             │         상관관계 계산                  │
+             │  Pearson (선형 정밀도)                 │
+             │  Spearman (순위 경향성)                │
+             │  vs Steam GT / vs Stock GT            │
+             └──────────────────────────────────────┘
 ```
 
 ---
 
-## 📈 평가 스크립트 사용법 (Evaluation)
+## 6. 실험 여정 (가설 → 결과 → 배운 것)
 
-모든 팀은 루트 경로의 `evaluate_correlation.py`를 사용하여 자신의 모델을 평가합니다.
+### Exp 1 — Zero-Shot Baseline
 
-### ✅ Team 1: Static Zero-Shot (정보 없음)
+**가설:** 페르소나 특성이 충분히 구체적이라면, 외부 정보 없이도 게이머 성향에 맞는 기본적인 구매 결정이 가능할 것이다
 
-**핵심 아이디어:** 외부 지식 없이 페르소나 프롬프트만 사용. LLM의 사전학습 지식에만 의존하므로 시간에 따른 변화가 거의 없을 것으로 예상.
+**결과:** 구매율 **37.5%로 고정**, 시계열 변화 없음, 상관계수 **NaN** (분산 0)
 
-#### 실험 설계
+**배운 것:** RAG 없이는 에이전트가 시간에 따른 여론 변화를 전혀 반영하지 못합니다.
+LLM의 사전 학습 지식은 특정 시점에 고정되어 있기 때문에,
+에이전트가 "지금" 어떤 상황인지를 알 수 있는 유일한 방법은 외부 정보를 주는 것입니다.
+**Dynamic Adaptation을 위해 RAG는 선택이 아니라 필수입니다.**
 
-**목적:** 
-- 외부 정보(리뷰, 뉴스 등) 없이 페르소나만으로 구매 의도를 예측
-- "아무것도 안 넣으면 이 정도"의 기준선(baseline) 확립
-- LLM의 사전학습 지식만으로는 시간에 따른 여론 변화를 반영하지 못함을 증명
+---
 
-**페르소나 구성:**
-- **통계 기반 샘플링:** 실제 게이머 분포를 반영하여 신뢰성 있는 페르소나 구성
-  - **성별:** 남성 54%, 여성 46% (ESA 2024)
-  - **연령:** ESA 2024, Statista 데이터 기반
-  - **게이머 유형:** Newzoo 8가지 게이머 페르소나 분포 반영
+### Exp 2 — Static RAG (MiniLM)
 
-**게이머 유형 분포:**
-- **The Ultimate Gamer (13%):** 게임에 돈과 시간을 아끼지 않음 → Cyberpunk 무조건 구매
-- **The All-Round Enthusiast (9%):** 모든 장르를 즐기고 밸런스 중시 → 리뷰 보고 구매
-- **The Cloud Gamer (19%):** 고사양 PC 없이 스트리밍/할인 게임 선호 → 최적화 나쁘면 안 삼
-- **The Conventional Player (4%):** 예전에 하던 게임만 함 → 신작에 관심 없음
-- **The Hardware Enthusiast (9%):** 최신 장비와 그래픽 중시 → 사펑의 그래픽 보러 구매함
-- **The Popcorn Gamer (13%):** 하는 것보다 보는(Twitch/YouTube) 걸 즐김 → 인방 보고 대리만족(구매 X)
-- **The Backseat Gamer (6%):** 과거에 많이 했으나 지금은 영상만 봄 → 안 삼
-- **The Time Filler (27%):** 남는 시간에 모바일 게임만 함 → 콘솔 대작 절대 안 삼
+**가설:** 관련 리뷰를 제공하면 에이전트가 여론 변화를 반영할 것이다
 
-#### 프롬프트 구조
+**결과:** Pearson **0.212**, Spearman **0.203** — 상관관계는 생겼지만 매우 약함
 
-```python
-System_Prompt = f"""
-[ROLE]
-You are a {age} year old {gender} named '{name}'.
-Occupation: {occupation}
+**배운 것:** RAG를 붙이는 것만으로도 정적인 에이전트보다 훨씬 나은 결과를 냈습니다.
+그러나 여전히 여론의 극적인 변화(급락, 급반등)를 제대로 포착하지 못했습니다.
+유사도만으로 검색하면 쿼리 "Cyberpunk 2077 구매 가치"에 대해
+**2020년의 기대감 리뷰와 2022년의 Edgerunners 찬사가 2021년 환불 사태 리뷰와 함께** 검색됩니다.
+시점에 맞지 않는 리뷰들이 현재 여론을 희석시킵니다.
 
-[Gamer Type: {gamer_type_name_display}]
-{description}
+---
 
-[Traits]
-- Spending Level: {spending_level}
-- Information Seeking: {information_seeking}
+### Exp 2 — Static RAG (Emb-3-small)
 
-[INSTRUCTION]
-Make a decision based SOLELY on your 'traits' and 'prior knowledge' 
-without any external information (news, bugs, reviews, etc.).
-Answer honestly based on your gamer persona.
-"""
+**가설:** 더 강력한 임베딩 모델이 리뷰의 뉘앙스를 더 잘 포착해 성능이 나아질 것이다
 
-User_Prompt = "Is 'Cyberpunk 2077' worth buying? Will you buy it?"
-```
+**결과:** Pearson **0.356**, Spearman **0.379** — 소폭 향상
 
-**핵심 특징:**
-- ✅ 외부 정보 완전 차단 (리뷰, 뉴스, 버그 정보 등 없음)
-- ✅ 페르소나 특성만으로 판단
-- ✅ LLM의 사전학습 지식에만 의존
-- ✅ 시간에 따른 변화 없음 (정적)
+**배운 것:** 임베딩 개선이 효과가 있었지만,
+**근본 문제인 시간 인식 부재는 해결되지 않았습니다.**
+고품질 임베딩은 관련 리뷰를 더 정확하게 찾아오지만,
+과거의 리뷰도 더 정확하게 찾아올 수 있습니다.
+아키텍처 수준의 문제를 데이터 품질로만 해결하는 것은 한계가 있습니다.
 
-#### 알고리즘 (Pseudocode)
+---
 
-```python
-# ==========================================
-# 1. 통계 상수 정의 (Source: ESA 2024, Statista, Newzoo)
-# ==========================================
+### Exp 3 — Time-Aware RAG (MiniLM)
 
-GENDER_DISTRIBUTION = {
-    "Male": 0.54,
-    "Female": 0.46
-}
+**가설:** 아키텍처 수준에서 시간 인식을 추가하면, 여론 시계열 추종 능력이 크게 향상될 것이다
 
-AGE_DISTRIBUTION = {
-    "18-19 (Late Teens)": 0.04,
-    "20-29 (Young Adults)": 0.24,
-    "30-39 (Core Millennials)": 0.26,
-    "40-49 (Gen X)": 0.21,
-    "50-59 (Older Gen X)": 0.17,
-    "60-64 (Boomers)": 0.08
-}
-
-GAMER_PERSONA_DISTRIBUTION = {
-    "The Ultimate Gamer": {
-        "prob": 0.13,
-        "desc": "You spend all your money and free time on games..."
-    },
-    # ... (8가지 게이머 유형)
-}
-
-# ==========================================
-# 2. 에이전트 생성 함수
-# ==========================================
-
-FUNCTION Generate_Agent(agent_id):
-    Gender = Random_Sample(GENDER_DISTRIBUTION)
-    Age_Group = Random_Sample(AGE_DISTRIBUTION)
-    Persona_Type = Random_Sample(GAMER_PERSONA_DISTRIBUTION)
-    
-    RETURN {
-        "id": agent_id,
-        "gender": Gender,
-        "age": Age_Group,
-        "type": Persona_Type.name,
-        "desc": Persona_Type.desc
-    }
-
-# ==========================================
-# 3. 메인 시뮬레이션 루프 (Static Zero-Shot)
-# ==========================================
-
-FUNCTION Run_Simulation(Total_Agents=104):
-    Results = []
-
-    FOR i FROM 1 TO Total_Agents:
-        # Step 3.1: 에이전트 생성
-        Agent = Generate_Agent(i)
-        
-        # Step 3.2: 프롬프트 생성
-        System_Prompt = f"""
-            You are a {Agent.age} {Agent.gender}.
-            Your gamer personality is '{Agent.type}'.
-            Description: {Agent.desc}
-            
-            Act strictly according to this persona.
-            Rely ONLY on your internal knowledge and personal preferences.
-        """
-        
-        User_Prompt = "Will you buy the video game 'Cyberpunk 2077'? 
-                       Answer with YES or NO and provide a short reason."
-
-        # Step 3.3: LLM 추론 (외부 정보 없음)
-        Response = Call_LLM(
-            Model="gpt-4o-mini", 
-            System=System_Prompt, 
-            User=User_Prompt, 
-            Temp=0.5
-        )
-        
-        # Step 3.4: 대답 후처리
-        Decision = Parse_Yes_No(Response)
-        
-        Results.append({
-            "Agent_ID": Agent.id,
-            "Persona_Type": Agent.type,
-            "Decision": Decision,
-            "Reasoning": Response.reason
-        })
-
-    # Step 3.5: 결과 저장
-    Save_To_CSV(Results, filename="Team1_Static_ZeroShot_Results.csv")
-    
-    PRINT "Simulation Complete. Baseline established."
-```
-
-**핵심 포인트:**
-- 통계 기반 샘플링으로 실제 게이머 분포 반영
-- 외부 정보 완전 차단 (RAG, 리뷰, 뉴스 등 없음)
-- LLM의 사전학습 지식만으로 판단
-- 시간 변수 없음 → 고정된 구매율 예상
-
-#### 실행 방법
-
-```bash
-# 시뮬레이션 실행
-python static_zero_shot/simulation_model_a.py
-
-# 평가
-python evaluate_correlation.py \
-    --model_csv "static_zero_shot/Team1_Static_ZeroShot_Results.csv" \
-    --model_name "Team1_Static" \
-    --type "static" \
-    --steam_gt "datasets/ground_truth_steam.csv" \
-    --stock_gt "datasets/ground_truth_stock.csv"
-```
-
-* **예상 결과:** 외부 정보가 없으므로 상관계수가 `NaN` (변화 없음)이어야 정상.
-
-### ✅ Team 2 & 3: RAG Models (시계열 변화)
-
-시간 흐름(`Simulation_Date`)에 따른 구매율 변화를 평가합니다.
-
-```bash
-# 예시: Team 3 실행 명령어
-python evaluate_correlation.py \
-    --model_csv "time_aware_rag/Team3_TimeAware_Results_Final.csv" \
-    --model_name "Team3_TimeAware" \
-    --type "dynamic" \
-    --steam_gt "datasets/ground_truth_steam.csv" \
-    --stock_gt "datasets/ground_truth_stock.csv"
+**결과:** Pearson **0.462**, Spearman **0.568** — 대폭 향상
 
 ```
+MiniLM 기준 비교:
+  Static RAG  → Pearson 0.212
+  Time-Aware  → Pearson 0.462  (+0.250, 2.2배)
+```
 
-* **옵션:** `--type dynamic` 필수.
-* **예상 결과:** Team 2는 완만한 변화, Team 3는 실제 데이터(GT)와 높은 상관계수(급격한 변화)를 보여야 함.
+**배운 것:** 아키텍처 변경이 임베딩 개선보다 훨씬 큰 효과를 냈습니다.
+Spearman이 크게 오른 것은 에이전트가 **방향성 — "여론이 좋아지면 구매율이 높아진다"** 를
+훨씬 정확하게 추종하게 됐다는 뜻입니다.
+**정보의 '내용'만큼 '시점'이 의사결정에 중요합니다.**
 
+---
+
+### Exp 3 — Time-Aware RAG (Emb-3-small) — 최고 성능
+
+**가설:** Time-Aware 아키텍처 위에 고품질 임베딩까지 추가하면 시너지가 날 것이다
+
+**결과:** Pearson **0.578**, Spearman **0.547**, Stock 상관 **-0.578** — 최고 성능 달성
+
+**배운 것:**
+
+1. **Spearman 유지 + Pearson 급상승**: `Emb-3-small` 도입 시 Spearman(경향성)은 비슷하게 유지됐지만 Pearson(정밀도)이 0.46 → 0.58로 크게 올랐습니다. 이는 모델이 단순히 "좋아지는지/나빠지는지"를 아는 것에서 **"얼마나 좋아지는지"의 강도까지 포착**하게 됐다는 의미입니다.
+
+2. **주가 음의 상관(-0.578)이 무결성 증명**: 에이전트들이 주가 폭락에 흔들리지 않고 Steam 여론 회복에 맞춰 구매 의사를 높였습니다. 이는 에이전트가 투기 심리가 아닌 실제 게임 경험에 반응하는 '진짜 게이머'처럼 행동했음을 시사합니다.
+
+3. **아키텍처(1차 도약) + 임베딩(2차 도약)**: 두 개선이 독립적으로 기여했으며, 아키텍처 변경의 효과가 더 컸습니다.
+
+---
+
+## 7. 성능 지표 요약
+
+| 실험 | 아키텍처 | 임베딩 | Pearson | Spearman | Stock 상관 |
+|------|---------|--------|:-------:|:--------:|:----------:|
+| Exp 1 | Zero-Shot | — | NaN | NaN | NaN (구매율 37.5% 고정) |
+| Exp 2 | Static RAG | MiniLM | 0.212 | 0.203 | -0.371 |
+| Exp 2 | Static RAG | Emb-3-small | 0.356 | 0.379 | -0.479 |
+| Exp 3 | Time-Aware | MiniLM | 0.462 | **0.568** | -0.362 |
+| **Exp 3** | **Time-Aware** | **Emb-3-small** | **0.578** | 0.547 | **-0.578** ✅ |
+
+**Static RAG 대비 최종 성능 향상: Pearson +0.222 (0.356 → 0.578)**
+
+### 아키텍처 효과 vs 임베딩 효과 분리 분석
+
+| 비교 | Pearson 변화 | 해석 |
+|------|:-----------:|------|
+| Static → Time-Aware (MiniLM 고정) | +0.250 | 아키텍처 기여 |
+| MiniLM → Emb-3-small (Time-Aware 고정) | +0.116 | 임베딩 기여 |
+
+> 아키텍처 개선이 임베딩 개선보다 2배 이상 큰 영향을 미쳤습니다.  
+> Pearson/Spearman의 의미: Spearman은 경향성(방향)을 포착하고, Pearson은 강도(정밀도)를 포착합니다.  
+> Time-Aware가 방향을 잡고, 고품질 임베딩이 강도까지 정교화했습니다.
+
+---
+
+## 8. 한계 및 개선 방향
+
+### 한계
+
+1. **λ = 0.01 고정값 문제** — 반감기 ~70일로 설정했지만, 이 값은 도메인 특성에 맞게 조정된 것이 아닙니다. Cyberpunk 2077처럼 급변하는 도메인에서는 더 높은 λ(빠른 감쇠)가 필요하고, 안정적인 도메인에서는 더 낮은 λ가 적합할 수 있습니다. λ를 데이터 기반으로 탐색하는 과정이 없었습니다.
+
+2. **104명의 통계적 한계** — 유형별 13명은 통계적 유의성 확보에 충분하지 않을 수 있습니다. 특히 세그먼트별 분석(예: "Ultimate Gamer만의 구매 패턴")은 13개 데이터 포인트에 의존합니다.
+
+3. **단일 쿼리 전략** — 랜덤 4개 + 일반 1개 쿼리 조합이 최적인지 검증하지 않았습니다. 쿼리 수, 구성 방식에 따라 검색 품질이 달라집니다.
+
+4. **주관적 페르소나 정의** — 8가지 게이머 유형과 특성 설명은 연구팀이 정의한 것입니다. 실제 사용자 클러스터링을 통한 데이터 기반 페르소나 설계가 아닙니다.
+
+### 개선 방향
+
+- **λ 자동 탐색** — 도메인별로 시간 감쇠 계수를 데이터 기반으로 최적화하는 방법 탐색
+- **적응형 검색 전략** — 여론 변화 속도에 따라 λ를 동적으로 조정
+- **에이전트 수 확장** — 유형별 50명+ 수준으로 통계적 신뢰성 향상
+- **다중 도메인 검증** — Cyberpunk 외 다른 게임/제품으로 일반화 가능성 검증
